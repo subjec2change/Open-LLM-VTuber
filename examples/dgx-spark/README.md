@@ -36,7 +36,7 @@ All models run **fully locally** on the same GPU simultaneously.
 
 **Component**  | **Model**  | **VRAM**  | **Port**  | **Role**
 --------------|----------|----------|--------|--------
-LLM           | Qwen2.5-14B-Instruct (Q4_K_M) | ~9 GB | 8080 | Conversation AI
+LLM           | HauhauCS Qwen3.6-35B-A3B Aggressive (Q5_K_P) | ~28 GB | 8080 | Conversation AI
 ASR           | faster-whisper large-v3-turbo  | ~3 GB | — | Speech-to-text
 TTS           | MeloTTS EN-Default             | ~2 GB | — | Text-to-speech
 VAD           | Silero VAD                     | ~0.1 GB | — | Voice activity detection
@@ -108,7 +108,7 @@ uv pip install melo-tts==0.1.2
 mkdir -p build
 git clone --depth 1 https://github.com/ggml-org/llama.cpp build/llama.cpp
 cd build/llama.cpp
-cmake -B build -DGGML_CUDA=ON -DLLAMA_CUDA=ON .
+cmake -B build -DGGML_CUDA=ON .
 cmake --build build --config Release -j$(nproc) --target llama-server
 sudo cp build/bin/llama-server /usr/local/bin/
 cd ../..
@@ -122,17 +122,17 @@ cd ../..
 
 ```bash
 mkdir -p models
-curl -L -o models/Qwen2.5-14B-Instruct-Q4_K_M.gguf \
-  https://huggingface.co/bartowski/Qwen2.5-14B-Instruct-GGUF/resolve/main/Qwen2.5-14B-Instruct-Q4_K_M.gguf
+LLM_FILE='Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q5_K_P.gguf'
+curl -L --fail --retry 3 -C - -o "models/$LLM_FILE" \
+  "https://huggingface.co/HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive/resolve/main/$LLM_FILE"
 ```
 
-> **Why Qwen2.5-14B Q4_K_M?**
-> - 14B parameters at Q4 quantization = ~9 GB — fits comfortably in 128 GB
-> - Q4_K_M is the sweet spot between quality and speed
-> - Excellent English and Chinese, 128K context window
-> - If you want more speed, use `Qwen2.5-7B-Instruct-Q4_K_M.gguf` (~5 GB)
-> - If you want more intelligence, use `Qwen2.5-32B-Instruct-Q4_K_M.gguf` (~20 GB)
-> - The 14B version is the best balance for a real-time voice assistant
+> **Why Qwen3.6-35B-A3B Aggressive Q5_K_P?**
+> - HauhauCS describes this as its fully unlocked aggressive variant.
+> - It is a 35B total / approximately 3B active MoE model, so generation remains practical.
+> - The Q5_K_P file is about 28 GB and leaves substantial room in 128 GB unified memory.
+> - For maximum stability in long coding/tool chains, use the 27B Balanced Q6_K_P instead.
+> - For lower memory and faster startup, use the same repo's Q4_K_M file (~21 GB).
 
 #### 2f. Deploy Configuration
 
@@ -151,10 +151,11 @@ You need **two terminal sessions** (or use tmux/screen).
 ```bash
 cd Open-LLM-VTuber
 
-llama-server -m models/Qwen2.5-14B-Instruct-Q4_K_M.gguf \
+llama-server -m models/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q5_K_P.gguf \
   --host 127.0.0.1 --port 8080 \
-  -ngl 99 -c 8192 --mlock \
-  --cache-type-k q8_0 --cache-type-v q8_0
+  -ngl 99 -c 131072 --jinja --mlock -fa on \
+  --cache-type-k q8_0 --cache-type-v q8_0 \
+  --chat-template-kwargs '{"enable_thinking":false}'
 ```
 
 **Flag explanation:**
@@ -165,7 +166,9 @@ llama-server -m models/Qwen2.5-14B-Instruct-Q4_K_M.gguf \
 | `--host 127.0.0.1` | Bind to localhost only (Open-LLM-VTuber is on the same machine) |
 | `--port 8080` | HTTP API port |
 | `-ngl 99` | Offload 99 layers to GPU (all of them) |
-| `-c 8192` | Context window of 8192 tokens |
+| `-c 131072` | 128K context, matching the model's documented context support |
+| `--jinja` | Use llama.cpp's native chat-template handling |
+| `-fa on` | Enable flash attention when supported by the build |
 | `--mlock` | Lock model in RAM, prevent swapping |
 | `--cache-type-k q8_0` | KV cache for K in 8-bit (saves VRAM) |
 | `--cache-type-v q8_0` | KV cache for V in 8-bit (saves VRAM) |
@@ -209,9 +212,10 @@ Then access from another machine at **http://<DGX-IP>:12393**.
 
 | Model | GGUF File | Size | Quality | Notes |
 |-------|-----------|------|---------|-------|
-| **Qwen2.5-14B Q4_K_M** (default) | `bartowski/Qwen2.5-14B-Instruct-GGUF` | ~9 GB | ★★★★☆ | Best balance for real-time voice |
-| Qwen2.5-7B Q4_K_M | `bartowski/Qwen2.5-7B-Instruct-GGUF` | ~5 GB | ★★★☆☆ | Lower latency, lower quality |
-| Qwen2.5-32B Q4_K_M | `bartowski/Qwen2.5-32B-Instruct-GGUF` | ~20 GB | ★★★★★ | Higher latency, best quality |
+| **Qwen3.6-35B-A3B Aggressive Q5_K_P** (default) | `HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive` | ~28 GB | ★★★★★ | Best quality/latency choice for 128 GB unified memory |
+| Qwen3.6-27B Balanced Q6_K_P | `HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Balanced` | ~23 GB | ★★★★★ | Recommended for long agentic coding/tool chains |
+| Qwen3.6-35B-A3B Aggressive Q4_K_M | `HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive` | ~21 GB | ★★★★☆ | Lower memory and faster startup |
+| Gemma4-12B QAT Balanced + MTP | `HauhauCS/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced` | ~7.4 GB | ★★★★☆ | Fastest option; supports MTP speculative decoding |
 | Llama 3.1 8B Q4_K_M | `hugging-quants/Meta-Llama-3.1-8B-Instruct-GGUF` | ~5 GB | ★★★★☆ | Good English-only option |
 | DeepSeek R1 Distill Qwen 14B IQ4_XS | `bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF` | ~9 GB | ★★★★☆ | Good reasoning model |
 
@@ -253,7 +257,7 @@ tts_config:
   tts_model: 'edge_tts'        # zero GPU
 ```
 
-### If you want to run a bigger LLM (e.g., Qwen2.5-32B)
+### If you want to run a bigger LLM (e.g., Qwen3.6-35B-A3B)
 
 Use the smallest TTS and ASR to free up VRAM:
 
@@ -275,7 +279,7 @@ tts_config:
 ### "CUDA out of memory"
 
 Reduce model sizes:
-1. Use a smaller LLM: `Qwen2.5-7B-Instruct-Q4_K_M.gguf` (~5 GB)
+1. Use a smaller LLM: HauhauCS Qwen3.6-35B-A3B Q4_K_M (~21 GB), or Gemma4-12B Q4_K_M (~7.4 GB)
 2. Use `edge-tts` (zero GPU) instead of `melo_tts`
 3. Use `faster-whisper medium` with `compute_type: 'int8'`
 4. Reduce llama.cpp context: `-c 4096`
@@ -307,7 +311,7 @@ git submodule update --init --recursive
 | `examples/dgx-spark/conf.example.yaml` | DGX Spark configuration example |
 | `examples/dgx-spark/setup.sh` | Automated setup script |
 | `conf.yaml` | Active configuration (copied from the example) |
-| `models/Qwen2.5-14B-Instruct-Q4_K_M.gguf` | LLM model |
+| `models/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q5_K_P.gguf` | LLM model |
 | `models/whisper/` | ASR model cache |
 | `logs/debug_*.log` | Server logs |
 | `chat_history/` | Saved conversations |
@@ -317,5 +321,5 @@ git submodule update --init --recursive
 ## License
 
 This guide covers the setup of Open-LLM-VTuber (MIT license) and llama.cpp
-(MIT license). Model files have their own licenses (Qwen2.5: Apache 2.0,
-Llama: custom, etc.).
+(MIT license). Model files have their own licenses; review the model card and
+license for the HauhauCS release before redistribution.

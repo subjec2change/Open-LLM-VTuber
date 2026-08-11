@@ -7,12 +7,13 @@
 #   - 20 TFLOPS FP16
 #
 # All models run simultaneously on the same GPU:
-#   LLM : llama-server (llama.cpp) serving Qwen2.5-14B Q4_K_M
+#   LLM : llama-server (llama.cpp) serving HauhauCS Qwen3.6-35B-A3B
 #   ASR : faster-whisper large-v3-turbo (CUDA)
 #   TTS : MeloTTS (CUDA)  or  edge-tts (CPU/zero-GPU)
 #   VAD : Silero VAD (CPU)
 #
-# Total GPU memory used: ~15 GB — leaves ~110 GB for the system.
+# The default Q5_K_P model is about 28 GB; the 128K KV cache and the
+# ASR/TTS models use additional unified memory. Leave room for the OS.
 # ═══════════════════════════════════════════════════════════════
 
 system_config:
@@ -43,10 +44,11 @@ character_config:
   # LLM — llama-server (llama.cpp) background process
   #
   #   Run before starting the VTuber:
-  #     llama-server -m models/Qwen2.5-14B-Instruct-Q4_K_M.gguf \
+  #     llama-server -m models/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q5_K_P.gguf \
   #       --host 127.0.0.1 --port 8080 \
-  #       -ngl 99 -c 8192 --mlock \
-  #       --cache-type-k q8_0 --cache-type-v q8_0
+  #       -ngl 99 -c 131072 --jinja --mlock -fa on \
+  #       --cache-type-k q8_0 --cache-type-v q8_0 \
+  #       --chat-template-kwargs '{"enable_thinking":false}'
   #
   #   The openai_compatible_llm provider connects to the
   #   llama.cpp HTTP server at 127.0.0.1:8080.
@@ -66,8 +68,8 @@ character_config:
       openai_compatible_llm:
         base_url: 'http://127.0.0.1:8080/v1'
         llm_api_key: 'not-needed'
-        model: 'qwen2.5-14b-instruct'
-        temperature: 0.9
+        model: 'HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive'
+        temperature: 0.7
         interrupt_method: 'system'   # llama.cpp supports system-role insertion
 
   # ─────────────────────────────────────────────────────────────

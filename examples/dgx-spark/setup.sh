@@ -12,7 +12,7 @@
 # This script will:
 #   1. Install system dependencies (llama.cpp, CUDA tools)
 #   2. Install Python dependencies via uv
-#   3. Download the LLM model (Qwen2.5-14B-Instruct Q4_K_M)
+#   3. Download the LLM model (HauhauCS Qwen3.6-35B-A3B Q5_K_P)
 #   4. Download the ASR model (faster-whisper large-v3-turbo)
 #   5. Copy the DGX Spark conf.yaml
 #   6. Print a launch command
@@ -53,8 +53,9 @@ echo "▸ [3/6] Installing Python dependencies (uv sync)..."
 cd "$DIR"
 uv sync 2>&1 | tail -3
 
-# Install melo-tts extra if needed (for MeloTTS)
-uv pip install melo-tts==0.1.2 2>&1 | tail -1 || true
+# These are optional project extras, installed here because the base project
+# intentionally does not force a particular ASR/TTS backend.
+uv pip install faster-whisper melo-tts==0.1.2 2>&1 | tail -1 || true
 
 # ── Step 4: Build / install llama.cpp ───────────
 echo "▸ [4/6] Installing llama.cpp (llama-server)..."
@@ -66,7 +67,7 @@ else
     git clone --depth 1 https://github.com/ggml-org/llama.cpp build/llama.cpp
   fi
   cd build/llama.cpp
-  cmake -B build -DGGML_CUDA=ON -DLLAMA_CUDA=ON .
+  cmake -B build -DGGML_CUDA=ON .
   cmake --build build --config Release -j$(nproc) --target llama-server
   sudo cp build/bin/llama-server /usr/local/bin/
   cd "$DIR"
@@ -77,13 +78,19 @@ fi
 echo "▸ [5/6] Downloading models..."
 mkdir -p models
 
-# LLM — Qwen2.5-14B-Instruct Q4_K_M (~9 GB)
-if [ ! -f "models/Qwen2.5-14B-Instruct-Q4_K_M.gguf" ]; then
-  echo "   Downloading Qwen2.5-14B-Instruct Q4_K_M (~9 GB)..."
-  curl -L -o models/Qwen2.5-14B-Instruct-Q4_K_M.gguf \
-    https://huggingface.co/bartowski/Qwen2.5-14B-Instruct-GGUF/resolve/main/Qwen2.5-14B-Instruct-Q4_K_M.gguf
+# LLM — HauhauCS Qwen3.6-35B-A3B Aggressive Q5_K_P (~28 GB)
+LLM_FILE="Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q5_K_P.gguf"
+LLM_REPO="HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive"
+if [ ! -f "models/$LLM_FILE" ]; then
+  echo "   Downloading $LLM_FILE (~28 GB)..."
+  if command -v hf &>/dev/null; then
+    hf download "$LLM_REPO" "$LLM_FILE" --local-dir models
+  else
+    curl -L --fail --retry 3 -C - -o "models/$LLM_FILE" \
+      "https://huggingface.co/$LLM_REPO/resolve/main/$LLM_FILE"
+  fi
 else
-  echo "   Qwen2.5-14B GGUF already exists, skipping."
+  echo "   HauhauCS Qwen3.6 GGUF already exists, skipping."
 fi
 
 # faster-whisper will auto-download on first run, but we pre-cache it
@@ -103,10 +110,11 @@ echo ""
 echo "To start the VTuber, run these in TWO terminals:"
 echo ""
 echo "  ── Terminal 1: llama.cpp server ──"
-echo "    llama-server -m models/Qwen2.5-14B-Instruct-Q4_K_M.gguf \\"
+echo "    llama-server -m models/$LLM_FILE \\"
 echo "      --host 127.0.0.1 --port 8080 \\"
-echo "      -ngl 99 -c 8192 --mlock \\"
-echo "      --cache-type-k q8_0 --cache-type-v q8_0"
+echo "      -ngl 99 -c 131072 --jinja --mlock -fa on \\"
+echo "      --cache-type-k q8_0 --cache-type-v q8_0 \\"
+echo "      --chat-template-kwargs '{\"enable_thinking\":false}'"
 echo ""
 echo "  ── Terminal 2: Open-LLM-VTuber ──"
 echo "    cd $DIR"
