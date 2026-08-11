@@ -115,9 +115,30 @@ character_config:
   #
   #   Downloads ~0.5 GB voice model on first use.
   #
-  #   Alternative: edge-tts (zero GPU, instant startup, requires
-  #   internet for Microsoft Edge TTS API).  Switch to edge_tts if
-  #   you want to reclaim the ~2 GB VRAM for a bigger LLM.
+  #   Alternatives:
+  #   - edge-tts (zero GPU, instant startup, requires internet)
+  #   - Qwen3-TTS (studio-quality, standalone OpenAI-compatible server)
+  #
+  #   For Qwen3-TTS, run the server alongside llama-server and switch
+  #   tts_model to 'openai_tts':
+  #
+  #     Install: curl -fsSL https://github.com/darkautism/qwen3-tts/raw/...
+  #              refs/heads/master/deploy/systemd/install-frontend.sh | bash
+  #
+  #     Config:
+  #       tts_model: 'openai_tts'
+  #       openai_tts:
+  #         model: 'qwen3-tts-1.7b-base'
+  #         voice: 'default'
+  #         api_key: 'not-needed'
+  #         base_url: 'http://127.0.0.1:8765/v1'
+  #         file_extension: 'wav'
+  #
+  #   Qwen3-TTS variants (all Apache 2.0):
+  #   - 0.6B Base: ~1 GB VRAM, fastest
+  #   - 1.7B Base: ~3 GB VRAM, voice cloning from reference audio
+  #   - 1.7B CustomVoice: ~3 GB VRAM, voice cloning with custom tuning
+  #   - 1.7B VoiceDesign: ~3 GB VRAM, describe a voice in words
   # ─────────────────────────────────────────────────────────────
   tts_config:
     tts_model: 'melo_tts'

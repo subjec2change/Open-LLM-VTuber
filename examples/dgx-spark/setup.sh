@@ -18,6 +18,7 @@
 #   6. Pre-cache ASR model   — faster-whisper large-v3-turbo (~3 GB)
 #   7. Deploy config         — conf.yaml from conf.example.yaml
 #   8. Hermes verify manifest — .hermes/environment.json
+#   9. (optional) Qwen3-TTS   — if --with-qwen3-tts flag is passed
 # ═══════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -134,6 +135,37 @@ cat > .hermes/environment.json <<'ENVEOF'
 }
 ENVEOF
 echo "   .hermes/environment.json installed."
+
+# ── Step 9: Qwen3-TTS (optional) ──────────────
+INSTALL_QWEN3_TTS=false
+for arg in "$@"; do
+  if [ "$arg" = "--with-qwen3-tts" ]; then
+    INSTALL_QWEN3_TTS=true
+  fi
+done
+
+if $INSTALL_QWEN3_TTS; then
+  echo "▸ [9/9] Installing Qwen3-TTS (studio-quality local TTS)..."
+  if command -v qwen3-tts &>/dev/null; then
+    echo "   qwen3-tts already installed, skipping."
+  else
+    if command -v cargo &>/dev/null; then
+      echo "   Building from source (requires Rust toolchain)..."
+      git clone --depth 1 https://github.com/darkautism/qwen3-tts.git build/qwen3-tts 2>/dev/null || true
+      cd build/qwen3-tts
+      cargo build --release 2>&1 | tail -3
+      sudo cp target/release/qwen3-tts /usr/local/bin/
+      cd "$DIR"
+      echo "   qwen3-tts installed to /usr/local/bin/"
+      echo "   Run: qwen3-tts serve --model Qwen/Qwen3-TTS-12Hz-0.6B-Base --quant q4"
+    else
+      echo "   Rust/cargo not found. Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+      echo "   Then re-run: bash examples/dgx-spark/setup.sh --with-qwen3-tts"
+    fi
+  fi
+else
+  echo "▸ [9/9] Qwen3-TTS skipped (pass --with-qwen3-tts to install)"
+fi
 
 # ── Done ────────────────────────────────────────
 echo ""

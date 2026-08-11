@@ -316,12 +316,80 @@ pages for the full list.
 
 ### TTS Options (set `tts_config:tts_model`)
 
+All options below work with the project's built-in TTS backends.
+**Qwen3-TTS** (recommended for best quality) runs as a separate server —
+see the dedicated section below.
+
 | Model | GPU | Quality | Notes |
 |-------|-----|---------|-------|
 | **MeloTTS** (default) | ~2 GB | ★★★★☆ | Fully local, GPU-accelerated; downloads ~0.5 GB on first use |
+| **Qwen3-TTS** (recommended) | ~3 GB | ★★★★★ | Studio-quality, 10 languages; runs as standalone OpenAI-compatible server |
 | edge-tts | 0 GB | ★★★★★ | Zero GPU, needs internet, fastest startup |
 | Piper TTS | 0 GB (CPU) | ★★★☆☆ | Local, CPU-only, supports many voices |
 | Sherpa-ONNX TTS | ~1 GB | ★★★☆☆ | Local, GPU-accelerated |
+
+---
+
+### Qwen3-TTS — Studio-Quality Local TTS
+
+[Qwen3-TTS](https://huggingface.co/collections/Qwen/qwen3-tts) is Alibaba's
+state-of-the-art text-to-speech model. It supports 10 languages, voice
+cloning from reference audio (CustomVoice), and text-based voice design
+(VoiceDesign). Quality rivals cloud TTS APIs like ElevenLabs.
+
+**Integration model:** Qwen3-TTS runs as a standalone server alongside
+llama-server, exposing an OpenAI-compatible `/v1/audio/speech` endpoint.
+Open-LLM-VTuber connects to it via the built-in `openai_tts` provider.
+
+**Available variants:**
+
+| Variant | Params | Download | VRAM | Best for |
+|---------|--------|----------|------|----------|
+| 0.6B Base | 0.9B | ~0.8 GB | ~1 GB | Fastest, lowest VRAM |
+| 1.7B Base | 2B | ~1.5 GB | ~3 GB | Voice cloning from reference audio |
+| 1.7B CustomVoice | 2B | ~1.5 GB | ~3 GB | Voice cloning with custom fine-tuning |
+| 1.7B VoiceDesign | 2B | ~1.5 GB | ~3 GB | Describe a voice in words, generate it |
+
+**Install (darkautism/qwen3-tts):**
+
+```bash
+# One-line install — auto-downloads models from Hugging Face
+curl -fsSL https://github.com/darkautism/qwen3-tts/raw/refs/heads/master/deploy/systemd/install-frontend.sh | bash
+```
+
+This installs the `qwen3-tts` binary as a systemd user service, downloads the
+1.7B Base model (~1.5 GB), and starts an OpenAI-compatible API on port 8765.
+
+**Config snippet (in conf.yaml):**
+
+```yaml
+tts_config:
+  tts_model: 'openai_tts'
+
+  openai_tts:
+    model: 'qwen3-tts-1.7b-base'
+    voice: 'default'
+    api_key: 'not-needed'
+    base_url: 'http://127.0.0.1:8765/v1'
+    file_extension: 'wav'
+```
+
+**Manual install (no systemd):**
+
+```bash
+git clone https://github.com/darkautism/qwen3-tts.git
+cd qwen3-tts
+cargo build --release
+
+# Start the server (0.6B Base, Q4 quant — fastest, ~1 GB VRAM)
+./target/release/qwen3-tts serve --model Qwen/Qwen3-TTS-12Hz-0.6B-Base --quant q4
+
+# Or 1.7B Base, Q5 quant — better quality, ~3 GB VRAM
+./target/release/qwen3-tts serve --model Qwen/Qwen3-TTS-12Hz-1.7B-Base --quant q5
+```
+
+Then configure Open-LLM-VTuber as above and point `base_url` to
+`http://127.0.0.1:8765/v1`.
 
 ---
 
