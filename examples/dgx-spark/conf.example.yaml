@@ -12,8 +12,17 @@
 #   TTS : MeloTTS (CUDA)  or  edge-tts (CPU/zero-GPU)
 #   VAD : Silero VAD (CPU)
 #
-# The default Q5_K_P model is about 28 GB; the 128K KV cache and the
-# ASR/TTS models use additional unified memory. Leave room for the OS.
+# Approximate unified memory usage:
+#   LLM (Q5_K_P GGUF)  : ~28 GB
+#   ASR (faster-whisper): ~3 GB
+#   TTS (MeloTTS)      : ~2 GB
+#   KV cache (128K q8)  : ~8 GB
+#   OS + overhead       : ~8 GB
+#   TOTAL               : ~49 GB  (out of 128 GB — very comfortable)
+#
+# First-boot downloads (one-time, cached afterward):
+#   faster-whisper large-v3-turbo: ~3 GB → models/whisper/
+#   MeloTTS EN-Default voice:     ~0.5 GB → auto-cached
 # ═══════════════════════════════════════════════════════════════
 
 system_config:
@@ -43,15 +52,22 @@ character_config:
   # ─────────────────────────────────────────────────────────────
   # LLM — llama-server (llama.cpp) background process
   #
-  #   Run before starting the VTuber:
+  #   The openai_compatible_llm provider connects to the
+  #   llama.cpp HTTP server at 127.0.0.1:8080.
+  #
+  #   Start llama-server before the VTuber:
   #     llama-server -m models/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q5_K_P.gguf \
   #       --host 127.0.0.1 --port 8080 \
   #       -ngl 99 -c 131072 --jinja --mlock -fa on \
   #       --cache-type-k q8_0 --cache-type-v q8_0 \
   #       --chat-template-kwargs '{"enable_thinking":false}'
   #
-  #   The openai_compatible_llm provider connects to the
-  #   llama.cpp HTTP server at 127.0.0.1:8080.
+  #   Why openai_compatible_llm rather than llama_cpp_llm?
+  #   The llama_cpp_llm provider loads the GGUF directly in-process
+  #   and exposes very few knobs (no n_gpu_layers, no context size).
+  #   Using llama-server as a standalone process gives full control
+  #   over GPU offloading, context, flash attention, and the chat
+  #   template, and it keeps the model loaded between VTuber restarts.
   # ─────────────────────────────────────────────────────────────
   agent_config:
     conversation_agent_choice: 'basic_memory_agent'
@@ -75,8 +91,13 @@ character_config:
   # ─────────────────────────────────────────────────────────────
   # ASR — faster-whisper large-v3-turbo on CUDA
   #
-  #   fast, accurate, runs entirely on the DGX Spark GPU.
-  #   First download: ~3 GB download, ~3 GB VRAM at runtime.
+  #   Fast, accurate, runs entirely on the DGX Spark GPU.
+  #   Downloads ~3 GB on first boot into models/whisper/.
+  #   Subsequent boots use the cached model (instant).
+  #
+  #   Alternatives:
+  #   - sherpa-onnx (sense_voice): lighter, auto-downloads ~1 GB
+  #   - faster-whisper medium: ~1.5 GB, slightly lower accuracy
   # ─────────────────────────────────────────────────────────────
   asr_config:
     asr_model: 'faster_whisper'
@@ -92,9 +113,11 @@ character_config:
   # ─────────────────────────────────────────────────────────────
   # TTS — MeloTTS on CUDA  (fast, local, GPU-accelerated)
   #
-  #   Alternative: edge-tts (zero GPU, instant, requires internet
-  #   for Microsoft Edge TTS API).  Switch to edge_tts if you
-  #   want to reclaim the ~2 GB VRAM for a bigger LLM.
+  #   Downloads ~0.5 GB voice model on first use.
+  #
+  #   Alternative: edge-tts (zero GPU, instant startup, requires
+  #   internet for Microsoft Edge TTS API).  Switch to edge_tts if
+  #   you want to reclaim the ~2 GB VRAM for a bigger LLM.
   # ─────────────────────────────────────────────────────────────
   tts_config:
     tts_model: 'melo_tts'

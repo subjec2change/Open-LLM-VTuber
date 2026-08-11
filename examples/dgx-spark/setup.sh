@@ -9,13 +9,15 @@
 #     cd Open-LLM-VTuber
 #     bash examples/dgx-spark/setup.sh
 #
-# This script will:
-#   1. Install system dependencies (llama.cpp, CUDA tools)
-#   2. Install Python dependencies via uv
-#   3. Download the LLM model (HauhauCS Qwen3.6-35B-A3B Q5_K_P)
-#   4. Download the ASR model (faster-whisper large-v3-turbo)
-#   5. Copy the DGX Spark conf.yaml
-#   6. Print a launch command
+# This script:
+#   1. System dependencies   — build tools, CUDA headers
+#   2. uv package manager    — installed if not present
+#   3. Python deps           — uv sync + faster-whisper, melo-tts, pytest
+#   4. llama.cpp from source — CUDA-enabled llama-server
+#   5. Download LLM          — HauhauCS Qwen3.6-35B-A3B Q5_K_P (~28 GB)
+#   6. Pre-cache ASR model   — faster-whisper large-v3-turbo (~3 GB)
+#   7. Deploy config         — conf.yaml from conf.example.yaml
+#   8. Hermes verify manifest — .hermes/environment.json
 # ═══════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -27,9 +29,8 @@ echo "========================================"
 echo ""
 
 # ── Step 1: System dependencies ────────────────
-echo "▸ [1/6] Installing system dependencies..."
+echo "▸ [1/8] Installing system dependencies..."
 
-# Detect OS
 if command -v apt-get &>/dev/null; then
   # Ubuntu / Debian (DGX Spark ships Ubuntu)
   sudo apt-get update -qq
@@ -42,23 +43,24 @@ else
 fi
 
 # ── Step 2: Install uv if not present ──────────
-echo "▸ [2/6] Ensuring uv package manager..."
+echo "▸ [2/8] Ensuring uv package manager..."
 if ! command -v uv &>/dev/null; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
 # ── Step 3: Install Python dependencies ─────────
-echo "▸ [3/6] Installing Python dependencies (uv sync)..."
+echo "▸ [3/8] Installing Python dependencies (uv sync)..."
 cd "$DIR"
 uv sync 2>&1 | tail -3
 
-# These are optional project extras, installed here because the base project
-# intentionally does not force a particular ASR/TTS backend.
-uv pip install faster-whisper melo-tts==0.1.2 2>&1 | tail -1 || true
+# Optional backends — the base project intentionally does not force a
+# particular ASR or TTS backend; this config uses faster-whisper + MeloTTS.
+echo "   Installing faster-whisper, melo-tts, and pytest..."
+uv pip install faster-whisper melo-tts==0.1.2 pytest 2>&1 | tail -1 || true
 
 # ── Step 4: Build / install llama.cpp ───────────
-echo "▸ [4/6] Installing llama.cpp (llama-server)..."
+echo "▸ [4/8] Installing llama.cpp (llama-server)..."
 if command -v llama-server &>/dev/null; then
   echo "   llama-server already installed, skipping build."
 else
@@ -74,11 +76,11 @@ else
   echo "   llama-server installed to /usr/local/bin/"
 fi
 
-# ── Step 5: Download models ─────────────────────
-echo "▸ [5/6] Downloading models..."
+# ── Step 5: Download LLM model ──────────────────
+echo "▸ [5/8] Downloading LLM model..."
 mkdir -p models
 
-# LLM — HauhauCS Qwen3.6-35B-A3B Aggressive Q5_K_P (~28 GB)
+# HauhauCS Qwen3.6-35B-A3B Aggressive Q5_K_P (~28 GB)
 LLM_FILE="Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q5_K_P.gguf"
 LLM_REPO="HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive"
 if [ ! -f "models/$LLM_FILE" ]; then
@@ -93,13 +95,45 @@ else
   echo "   HauhauCS Qwen3.6 GGUF already exists, skipping."
 fi
 
-# faster-whisper will auto-download on first run, but we pre-cache it
-# The model directory is models/whisper/ set in conf.yaml
+# ── Step 6: Pre-cache ASR model ─────────────────
+echo "▸ [6/8] Pre-caching faster-whisper model..."
+# faster-whisper auto-downloads on first use, but we pre-cache it now so the
+# VTuber starts faster on first boot.
+uv run python3 -c "
+from faster_whisper import WhisperModel
+import os
+os.makedirs('models/whisper', exist_ok=True)
+print('   Downloading faster-whisper large-v3-turbo (~3 GB, one-time)...')
+model = WhisperModel('large-v3-turbo', device='cpu', compute_type='int8',
+                     download_root='models/whisper')
+print('   faster-whisper model cached.')
+" 2>&1 || echo "   (non-fatal) faster-whisper pre-cache failed; will download on first boot"
 
-# ── Step 6: Copy config ─────────────────────────
-echo "▸ [6/6] Deploying configuration..."
+# ── Step 7: Copy config ─────────────────────────
+echo "▸ [7/8] Deploying configuration..."
 cp examples/dgx-spark/conf.example.yaml conf.yaml
 echo "   conf.yaml installed."
+
+# ── Step 8: Hermes verify manifest ──────────────
+echo "▸ [8/8] Installing Hermes verify manifest..."
+mkdir -p .hermes
+cat > .hermes/environment.json <<'ENVEOF'
+{
+  "version": 1,
+  "recipe": {
+    "name": "Open-LLM-VTuber",
+    "kind": "python",
+    "bootstrap": ["uv sync"],
+    "build": [],
+    "test": ["pytest"],
+    "start": "uv run run_server.py",
+    "port": 12393,
+    "readinessPath": "/",
+    "evidence": ["Project entry point: run_server.py", "Configured server port: 12393"]
+  }
+}
+ENVEOF
+echo "   .hermes/environment.json installed."
 
 # ── Done ────────────────────────────────────────
 echo ""
@@ -122,6 +156,6 @@ echo "    uv run run_server.py --verbose"
 echo ""
 echo "Then open http://localhost:12393 in your browser."
 echo ""
-echo "NOTE: On first run, faster-whisper will download"
-echo "large-v3-turbo (~3 GB). This happens once."
+echo "To verify the full stack:"
+echo "  hermes verify --json --ready-timeout 120"
 echo ""
