@@ -12,7 +12,7 @@
 # This script:
 #   1. System dependencies   — build tools, CUDA headers
 #   2. uv package manager    — installed if not present
-#   3. Python deps           — uv sync + faster-whisper, melo-tts, pytest
+#   3. Python deps           — uv sync + faster-whisper, MeloTTS (GitHub), pytest
 #   4. llama.cpp from source — CUDA-enabled llama-server
 #   5. Download LLM          — HauhauCS Qwen3.6-35B-A3B Q5_K_P (~28 GB)
 #   6. Pre-cache ASR model   — faster-whisper large-v3-turbo (~3 GB)
@@ -57,8 +57,9 @@ uv sync 2>&1 | tail -3
 
 # Optional backends — the base project intentionally does not force a
 # particular ASR or TTS backend; this config uses faster-whisper + MeloTTS.
-echo "   Installing faster-whisper, melo-tts, and pytest..."
-uv pip install faster-whisper melo-tts==0.1.2 pytest 2>&1 | tail -1 || true
+echo "   Installing faster-whisper, MeloTTS (from GitHub), and pytest..."
+# MeloTTS 0.1.2 is not available on PyPI, so install it directly from GitHub.
+uv pip install faster-whisper git+https://github.com/myshell-ai/MeloTTS.git pytest 2>&1 | tail -1 || true
 
 # ── Step 4: Build / install llama.cpp ───────────
 echo "▸ [4/8] Installing llama.cpp (llama-server)..."

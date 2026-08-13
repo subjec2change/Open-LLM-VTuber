@@ -102,7 +102,7 @@ uv sync
 
 # Install optional backends used by this config.
 # The base project does not force a specific ASR/TTS backend.
-uv pip install faster-whisper melo-tts==0.1.2
+uv pip install faster-whisper git+https://github.com/myshell-ai/MeloTTS.git
 
 # Install pytest so `hermes verify` can run the project's tests.
 uv pip install pytest
@@ -110,6 +110,10 @@ uv pip install pytest
 
 > **About `uv sync`**: This installs all dependencies from `pyproject.toml`
 > in a virtual environment. It's the project's standard package manager.
+>
+> **Why install MeloTTS from GitHub?** `melo-tts==0.1.2` is not available on
+> PyPI, so `uv` users should install MeloTTS directly from the upstream GitHub
+> repository instead.
 
 #### 2d. Build llama.cpp (with CUDA support)
 
@@ -529,7 +533,7 @@ This setup adds the following beyond the base project:
 |---------|-----|------|
 | `llama-server` (from source) | LLM inference, CUDA-enabled | ~50 MB binary |
 | `faster-whisper` | Speech-to-text via CTranslate2/CUDA | ~20 MB pip |
-| `melo-tts==0.1.2` | GPU-accelerated text-to-speech | ~30 MB pip |
+| `git+https://github.com/myshell-ai/MeloTTS.git` | GPU-accelerated text-to-speech (installed directly from GitHub because `melo-tts==0.1.2` is unavailable on PyPI) | ~30 MB install |
 | `pytest` | Test runner for `hermes verify` | ~2 MB pip |
 | HauhauCS Qwen3.6 GGUF | Uncensored LLM | ~28 GB download |
 | faster-whisper large-v3-turbo | ASR model (auto-download) | ~3 GB download |
