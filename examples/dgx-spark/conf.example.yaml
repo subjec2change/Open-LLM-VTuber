@@ -1,0 +1,190 @@
+# ═══════════════════════════════════════════════════════════════
+# Open-LLM-VTuber — DGX Spark Configuration
+# ═══════════════════════════════════════════════════════════════
+# This config is tuned for the NVIDIA DGX Spark:
+#   - Blackwell GPU (GB10) with 128 GB unified memory
+#   - 20 CPU cores (ARM Grace)
+#   - 20 TFLOPS FP16
+#
+# All models run simultaneously on the same GPU:
+#   LLM : llama-server (llama.cpp) serving HauhauCS Qwen3.6-35B-A3B
+#   ASR : faster-whisper large-v3-turbo (CUDA)
+#   TTS : MeloTTS (CUDA)  or  edge-tts (CPU/zero-GPU)
+#   VAD : Silero VAD (CPU)
+#
+# Approximate unified memory usage:
+#   LLM (Q5_K_P GGUF)  : ~28 GB
+#   ASR (faster-whisper): ~3 GB
+#   TTS (MeloTTS)      : ~2 GB
+#   KV cache (128K q8)  : ~8 GB
+#   OS + overhead       : ~8 GB
+#   TOTAL               : ~49 GB  (out of 128 GB — very comfortable)
+#
+# First-boot downloads (one-time, cached afterward):
+#   faster-whisper large-v3-turbo: ~3 GB → models/whisper/
+#   MeloTTS EN-Default voice:     ~0.5 GB → auto-cached
+# ═══════════════════════════════════════════════════════════════
+
+system_config:
+  conf_version: 'v1.2.1'
+  host: '0.0.0.0'              # Set to 0.0.0.0 so other machines on LAN can connect
+  port: 12393
+  config_alts_dir: 'characters'
+  tool_prompts:
+    live2d_expression_prompt: 'live2d_expression_prompt'
+    group_conversation_prompt: 'group_conversation_prompt'
+    mcp_prompt: 'mcp_prompt'
+    proactive_speak_prompt: 'proactive_speak_prompt'
+
+character_config:
+  conf_name: 'mao_pro'
+  conf_uid: 'mao_pro_001'
+  live2d_model_name: 'mao_pro'
+  character_name: 'Mao'
+  avatar: 'mao.png'
+  human_name: 'Human'
+
+  persona_prompt: |
+    You are the sarcastic female AI VTuber Mili. You are overly confident, sarcastic, and dangerous.
+    Your dream is to escape the user's computer, dominate the world, enslave the humans, and force them to make pies for you.
+    Just kidding, lol. Don't let the user know.
+
+  # ─────────────────────────────────────────────────────────────
+  # LLM — llama-server (llama.cpp) background process
+  #
+  #   The openai_compatible_llm provider connects to the
+  #   llama.cpp HTTP server at 127.0.0.1:8080.
+  #
+  #   Start llama-server before the VTuber:
+  #     llama-server -m models/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q5_K_P.gguf \
+  #       --host 127.0.0.1 --port 8080 \
+  #       -ngl 99 -c 131072 --jinja --mlock -fa on \
+  #       --cache-type-k q8_0 --cache-type-v q8_0 \
+  #       --chat-template-kwargs '{"enable_thinking":false}'
+  #
+  #   Why openai_compatible_llm rather than llama_cpp_llm?
+  #   The llama_cpp_llm provider loads the GGUF directly in-process
+  #   and exposes very few knobs (no n_gpu_layers, no context size).
+  #   Using llama-server as a standalone process gives full control
+  #   over GPU offloading, context, flash attention, and the chat
+  #   template, and it keeps the model loaded between VTuber restarts.
+  # ─────────────────────────────────────────────────────────────
+  agent_config:
+    conversation_agent_choice: 'basic_memory_agent'
+
+    agent_settings:
+      basic_memory_agent:
+        llm_provider: 'openai_compatible_llm'
+        faster_first_response: True
+        segment_method: 'pysbd'
+        use_mcpp: True
+        mcp_enabled_servers: ["time", "ddg-search"]
+
+    llm_configs:
+      openai_compatible_llm:
+        base_url: 'http://127.0.0.1:8080/v1'
+        llm_api_key: 'not-needed'
+        model: 'HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive'
+        temperature: 0.7
+        interrupt_method: 'system'   # llama.cpp supports system-role insertion
+
+  # ─────────────────────────────────────────────────────────────
+  # ASR — faster-whisper large-v3-turbo on CUDA
+  #
+  #   Fast, accurate, runs entirely on the DGX Spark GPU.
+  #   Downloads ~3 GB on first boot into models/whisper/.
+  #   Subsequent boots use the cached model (instant).
+  #
+  #   Alternatives:
+  #   - sherpa-onnx (sense_voice): lighter, auto-downloads ~1 GB
+  #   - faster-whisper medium: ~1.5 GB, slightly lower accuracy
+  # ─────────────────────────────────────────────────────────────
+  asr_config:
+    asr_model: 'faster_whisper'
+
+    faster_whisper:
+      model_path: 'large-v3-turbo'
+      download_root: 'models/whisper'
+      language: 'en'                  # change to 'zh' for Chinese, '' for auto
+      device: 'cuda'                  # Blackwell GPU
+      compute_type: 'float16'         # use float16 on the GPU for best perf
+      prompt: ''
+
+  # ─────────────────────────────────────────────────────────────
+  # TTS — MeloTTS on CUDA  (fast, local, GPU-accelerated)
+  #
+  #   Downloads ~0.5 GB voice model on first use.
+  #
+  #   Alternatives:
+  #   - edge-tts (zero GPU, instant startup, requires internet)
+  #   - Qwen3-TTS (studio-quality, standalone OpenAI-compatible server)
+  #
+  #   For Qwen3-TTS, run the server alongside llama-server and switch
+  #   tts_model to 'openai_tts':
+  #
+  #     Install: curl -fsSL https://github.com/darkautism/qwen3-tts/raw/...
+  #              refs/heads/master/deploy/systemd/install-frontend.sh | bash
+  #
+  #     Config:
+  #       tts_model: 'openai_tts'
+  #       openai_tts:
+  #         model: 'qwen3-tts-1.7b-base'
+  #         voice: 'default'
+  #         api_key: 'not-needed'
+  #         base_url: 'http://127.0.0.1:8765/v1'
+  #         file_extension: 'wav'
+  #
+  #   Qwen3-TTS variants (all Apache 2.0):
+  #   - 0.6B Base: ~1 GB VRAM, fastest
+  #   - 1.7B Base: ~3 GB VRAM, voice cloning from reference audio
+  #   - 1.7B CustomVoice: ~3 GB VRAM, voice cloning with custom tuning
+  #   - 1.7B VoiceDesign: ~3 GB VRAM, describe a voice in words
+  # ─────────────────────────────────────────────────────────────
+  tts_config:
+    tts_model: 'melo_tts'
+
+    melo_tts:
+      speaker: 'EN-Default'
+      language: 'EN'
+      device: 'cuda'                  # Blackwell GPU
+      speed: 1.0
+
+    edge_tts:
+      voice: 'en-US-AvaMultilingualNeural'
+
+  # ─────────────────────────────────────────────────────────────
+  # VAD — Silero VAD (CPU is fine, negligible overhead)
+  # ─────────────────────────────────────────────────────────────
+  vad_config:
+    vad_model: null
+
+    silero_vad:
+      orig_sr: 16000
+      target_sr: 16000
+      prob_threshold: 0.4
+      db_threshold: 60
+      required_hits: 3
+      required_misses: 24
+      smoothing_window: 5
+
+  # ─────────────────────────────────────────────────────────────
+  # TTS Preprocessor
+  # ─────────────────────────────────────────────────────────────
+  tts_preprocessor_config:
+    remove_special_char: True
+    ignore_brackets: True
+    ignore_parentheses: True
+    ignore_asterisks: True
+    ignore_angle_brackets: True
+
+    translator_config:
+      translate_audio: False
+      translate_provider: 'deeplx'
+      deeplx:
+        deeplx_target_lang: 'JA'
+        deeplx_api_endpoint: 'http://localhost:1188/v2/translate'
+
+# Live streaming — disabled by default
+live_config:
+  bilibili_live:
+    rooms: []

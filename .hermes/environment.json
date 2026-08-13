@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "recipe": {
+    "name": "Open-LLM-VTuber",
+    "kind": "python",
+    "bootstrap": ["uv sync"],
+    "build": [],
+    "test": [],
+    "start": "uv run run_server.py",
+    "port": 12393,
+    "readinessPath": "/",
+    "evidence": ["Project entry point: run_server.py", "Configured server port: 12393"]
+  }
+}
